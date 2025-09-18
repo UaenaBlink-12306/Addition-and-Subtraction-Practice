@@ -1,0 +1,403 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+/**
+ * Kid‑Mode Math Trainer (Addition & Subtraction)
+ * Three pages: Control → Practice → Result
+ * - Big, child‑friendly UI
+ * - Custom on‑screen keypad (limits iPad keyboard use)
+ * - Defaults to subtraction, range 1–10
+ * - Slider extends range up to 100
+ * - Operation toggles: +, − (both = mixed)
+ * - Question count: 10, 15 (default), 20, 25
+ * - Personal best records stored in localStorage
+ * - Fixed: no scroll between areas; no score aggregation after finish
+ * - New: wrong answers do NOT advance; question is marked wrong once, then child can retry unlimited times
+ */
+
+/******************** Storage helpers ********************/ 
+const STORAGE_KEYS = {
+  records: "kidmath_records_v2",
+  settings: "kidmath_settings_v2",
+};
+
+function loadStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function saveStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (_) {}
+}
+
+function formatMs(ms) {
+  if (ms == null) return "—";
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+/******************** Question helpers ********************/ 
+function genQuestion(max, ops) {
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let a = 1 + Math.floor(Math.random() * max);
+  let b = 1 + Math.floor(Math.random() * max);
+  if (op === "-") {
+    if (a < b) [a, b] = [b, a]; // avoid negatives for kid mode
+  }
+  return {
+    a,
+    b,
+    op,
+    key: `${a}${op}${b}-${Math.random()}`,
+    wrongOnce: false, // marked true after first wrong attempt
+    solved: false,    // becomes true after a correct input
+  };
+}
+
+function expectedAnswer(q) {
+  return q.op === "+" ? q.a + q.b : q.a - q.b;
+}
+
+/******************** App ********************/ 
+export default function App() {
+  // PAGES: control | practice | result
+  const [page, setPage] = useState("control");
+
+  // SETTINGS (persisted)
+  const savedSettings = useMemo(
+    () =>
+      loadStorage(STORAGE_KEYS.settings, {
+        max: 10,
+        plus: false,
+        minus: true, // default subtraction
+        totalQs: 15,
+      }),
+    []
+  );
+
+  const [max, setMax] = useState(savedSettings.max);
+  const [plus, setPlus] = useState(savedSettings.plus);
+  const [minus, setMinus] = useState(savedSettings.minus);
+  const [totalQs, setTotalQs] = useState(savedSettings.totalQs);
+
+  useEffect(() => {
+    saveStorage(STORAGE_KEYS.settings, { max, plus, minus, totalQs });
+  }, [max, plus, minus, totalQs]);
+
+  // RECORDS (persisted)
+  const [records, setRecords] = useState(
+    loadStorage(STORAGE_KEYS.records, {
+      bestScore: 0,          // most first-try correct in a session
+      bestStreak: 0,         // longest run of first-try correct
+      fastestPerfectMs: null,
+      totalSessions: 0,
+      totalCorrect: 0,
+      totalQuestions: 0,
+    })
+  );
+
+  function updateRecords(session) {
+    const next = { ...records };
+    if (session.correct > next.bestScore) next.bestScore = session.correct;
+    if (session.bestStreak > next.bestStreak) next.bestStreak = session.bestStreak;
+    if (session.correct === session.total && session.timeMs != null) {
+      if (next.fastestPerfectMs == null || session.timeMs < next.fastestPerfectMs) {
+        next.fastestPerfectMs = session.timeMs;
+      }
+    }
+    next.totalSessions += 1;
+    next.totalCorrect += session.correct;
+    next.totalQuestions += session.total;
+    setRecords(next);
+    saveStorage(STORAGE_KEYS.records, next);
+  }
+
+  function resetRecords() {
+    const blank = {
+      bestScore: 0,
+      bestStreak: 0,
+      fastestPerfectMs: null,
+      totalSessions: 0,
+      totalCorrect: 0,
+      totalQuestions: 0,
+    };
+    setRecords(blank);
+    saveStorage(STORAGE_KEYS.records, blank);
+  }
+
+  // ACTIVE OPS
+  const activeOps = useMemo(() => {
+    if (!plus && !minus) return ["-"]; // keep at least one
+    const arr = [];
+    if (plus) arr.push("+");
+    if (minus) arr.push("-");
+    return arr;
+  }, [plus, minus]);
+
+  /******************** Session State ********************/ 
+  const [questions, setQuestions] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [correctCount, setCorrectCount] = useState(0); // first-try correct only
+  const [streak, setStreak] = useState(0);             // first-try streak
+  const [bestStreak, setBestStreak] = useState(0);
+  const [feedback, setFeedback] = useState(null); // 'correct' | 'wrong' | null
+  const [startedAt, setStartedAt] = useState(null);
+  const [finishedMs, setFinishedMs] = useState(null);
+  const [processing, setProcessing] = useState(false); // prevents double submits
+
+  const current = questions[idx];
+
+  function startSession() {
+    const ops = activeOps.length ? activeOps : ["-"];
+    const qs = Array.from({ length: totalQs }, () => genQuestion(max, ops));
+    setQuestions(qs);
+    setIdx(0);
+    setAnswer("");
+    setCorrectCount(0);
+    setStreak(0);
+    setBestStreak(0);
+    setFeedback(null);
+    setStartedAt(Date.now());
+    setFinishedMs(null);
+    setProcessing(false);
+    setPage("practice");
+  }
+
+  function endSession() {
+    const timeMs = startedAt ? Date.now() - startedAt : null;
+    setFinishedMs(timeMs);
+    updateRecords({
+      correct: correctCount,
+      bestStreak,
+      total: questions.length,
+      timeMs,
+    });
+    setPage("result");
+  }
+
+  // keypad handlers (no native keyboard)
+  function tapDigit(d) {
+    if (processing || page !== "practice") return;
+    setAnswer((prev) => (prev.length >= 3 ? prev : (prev === "0" ? String(d) : prev + String(d))));
+  }
+  function tapDel() {
+    if (processing || page !== "practice") return;
+    setAnswer((prev) => prev.slice(0, -1));
+  }
+  function tapClear() {
+    if (processing || page !== "practice") return;
+    setAnswer("");
+  }
+
+  function submitAnswer() {
+    if (processing || page !== "practice") return;
+    if (!current) return;
+    if (answer === "") return; // require something
+
+    const exp = expectedAnswer(current);
+    const isCorrect = Number(answer) === exp;
+
+    if (isCorrect) {
+      // If first try (not previously wrong), count as correct & streak
+      if (!current.wrongOnce) {
+        setCorrectCount((c) => c + 1);
+        setStreak((s) => {
+          const ns = s + 1;
+          setBestStreak((b) => Math.max(b, ns));
+          return ns;
+        });
+      }
+      // mark solved and move on
+      setProcessing(true);
+      setFeedback("correct");
+      setQuestions((qs) => {
+        const copy = [...qs];
+        copy[idx] = { ...copy[idx], solved: true };
+        return copy;
+      });
+
+      const nextIdx = idx + 1;
+      // Advance immediately; no chance to resubmit this question
+      if (nextIdx >= questions.length) {
+        endSession();
+      } else {
+        setIdx(nextIdx);
+        setAnswer("");
+        setFeedback(null);
+        setProcessing(false);
+      }
+    } else {
+      // wrong: mark once, reset streak, clear input, stay on same question
+      if (!current.wrongOnce) {
+        setQuestions((qs) => {
+          const copy = [...qs];
+          copy[idx] = { ...copy[idx], wrongOnce: true };
+          return copy;
+        });
+      }
+      setStreak(0);
+      setFeedback("wrong");
+      setAnswer(""); // allow another try
+      // do NOT advance; do NOT increment incorrect more than once
+    }
+  }
+
+  const totalAccuracy = records.totalQuestions
+    ? Math.round((records.totalCorrect / records.totalQuestions) * 100)
+    : 0;
+
+  const keypad = (
+    <div className="grid grid-cols-3 gap-3 w-full max-w-sm mx-auto select-none">
+      {[1,2,3,4,5,6,7,8,9].map((n) => (
+        <button key={n} onClick={() => tapDigit(n)} className="h-20 rounded-2xl shadow bg-white text-3xl font-bold active:scale-95 transition">
+          {n}
+        </button>
+      ))}
+      <button onClick={tapClear} className="h-20 rounded-2xl shadow bg-yellow-100 text-xl font-semibold active:scale-95 transition">Clear</button>
+      <button onClick={() => tapDigit(0)} className="h-20 rounded-2xl shadow bg-white text-3xl font-bold active:scale-95 transition">0</button>
+      <button onClick={tapDel} className="h-20 rounded-2xl shadow bg-yellow-100 text-xl font-semibold active:scale-95 transition">Del</button>
+    </div>
+  );
+
+  /******************** Pages ********************/ 
+  function ControlPage() {
+    return (
+      <div className="min-h-screen w-full bg-gradient-to-b from-sky-50 to-sky-100 text-slate-900 flex flex-col items-center pb-12">
+        <div className="w-full max-w-5xl px-4 pt-6">
+          <header className="flex flex-col sm:flex-row gap-3 sm:items-end sm:justify-between">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">🎯 Kid‑Mode Math Trainer</h1>
+            <div className="flex flex-wrap gap-2 text-sm">
+              <div className="bg-white/80 rounded-xl px-3 py-2 shadow"><span className="font-semibold">Best Score:</span> {records.bestScore}</div>
+              <div className="bg-white/80 rounded-xl px-3 py-2 shadow"><span className="font-semibold">Best Streak:</span> {records.bestStreak}</div>
+              <div className="bg-white/80 rounded-xl px-3 py-2 shadow"><span className="font-semibold">Fastest Perfect:</span> {formatMs(records.fastestPerfectMs)}</div>
+              <div className="bg-white/80 rounded-xl px-3 py-2 shadow"><span className="font-semibold">Lifetime Accuracy:</span> {totalAccuracy}%</div>
+            </div>
+          </header>
+
+          <section className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <h2 className="font-bold text-lg mb-3">➕➖ Choose Operation</h2>
+              <div className="flex gap-3">
+                <button onClick={() => setPlus((p) => !p)} className={`flex-1 h-14 rounded-2xl text-2xl font-extrabold shadow active:scale-95 transition ${plus ? 'bg-emerald-200' : 'bg-slate-100'}`}>+ Add</button>
+                <button onClick={() => setMinus((m) => !m)} className={`flex-1 h-14 rounded-2xl text-2xl font-extrabold shadow active:scale-95 transition ${minus ? 'bg-rose-200' : 'bg-slate-100'}`}>− Subtract</button>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">Tip: Selecting both makes a mixed quiz.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <h2 className="font-bold text-lg mb-3">🎚️ Number Range</h2>
+              <div className="flex items-center gap-4">
+                <span className="w-20 text-center text-2xl font-bold">1–{max}</span>
+                <input type="range" min={10} max={100} step={1} value={max} onChange={(e) => setMax(Number(e.target.value))} className="w-full accent-sky-500" />
+              </div>
+              <p className="mt-2 text-sm text-slate-600">Defaults to 10 (ideal for early subtraction).</p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <h2 className="font-bold text-lg mb-3">🧮 Number of Questions</h2>
+              <div className="grid grid-cols-4 gap-2">
+                {[10, 15, 20, 25].map((n) => (
+                  <button key={n} onClick={() => setTotalQs(n)} className={`h-14 rounded-2xl text-xl font-bold shadow active:scale-95 transition ${totalQs === n ? 'bg-indigo-200' : 'bg-slate-100'}`}>{n}</button>
+                ))}
+              </div>
+              <p className="mt-2 text-sm text-slate-600">Default is 15; you can choose −5, +5, or +10.</p>
+            </div>
+          </section>
+
+          <div className="mt-5 flex gap-3">
+            <button onClick={startSession} className="flex-1 h-16 rounded-2xl bg-sky-500 hover:bg-sky-600 text-white text-2xl font-black shadow active:scale-95 transition">Start Quiz</button>
+            <button onClick={resetRecords} className="h-16 px-5 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-lg font-semibold shadow active:scale-95 transition">Reset Records</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function PracticePage() {
+    return (
+      <div className="min-h-screen w-full bg-gradient-to-b from-sky-50 to-sky-100 text-slate-900 flex flex-col items-center pb-12">
+        <div className="w-full max-w-4xl px-4 pt-6">
+          <header className="flex items-center justify-between mb-2">
+            <button onClick={() => setPage("control")} className="h-12 px-4 rounded-2xl bg-slate-200 hover:bg-slate-300 font-semibold shadow active:scale-95 transition">← Controls</button>
+            <div className="text-sm text-slate-600">Question {Math.min(idx + 1, questions.length)} / {questions.length} • First‑try Correct: <b>{correctCount}</b></div>
+          </header>
+
+          <div className="bg-white rounded-3xl p-6 shadow text-center">
+            <div className="text-6xl sm:text-7xl font-black tracking-tight mb-4">
+              {current ? (
+                <>
+                  <span>{current.a}</span>
+                  <span className="mx-4">{current.op}</span>
+                  <span>{current.b}</span>
+                  <span className="mx-4">=</span>
+                </>
+              ) : (
+                <span>—</span>
+              )}
+              <span className={`inline-block min-w-[120px] rounded-2xl px-4 py-2 ml-2 ${feedback === 'correct' ? 'bg-emerald-100' : feedback === 'wrong' ? 'bg-rose-100' : 'bg-slate-100'}`}>
+                <span className="align-middle">{answer === '' ? '…' : answer}</span>
+              </span>
+            </div>
+
+            <div className="mt-2 h-7">
+              {feedback === 'correct' && <div className="text-emerald-600 font-bold">✓ Great job!</div>}
+              {feedback === 'wrong' && <div className="text-rose-600 font-bold">✗ Oops! Try again.</div>}
+            </div>
+
+            <div className="mt-5">{keypad}</div>
+            <button onClick={submitAnswer} disabled={processing} className={`mt-5 w-full h-16 rounded-2xl text-white text-3xl font-black shadow active:scale-95 transition ${processing ? 'bg-emerald-300' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+              Submit
+            </button>
+
+            <div className="mt-6 grid grid-cols-3 gap-3 text-sm text-slate-600">
+              <div className="bg-slate-50 rounded-xl p-3"><div className="font-semibold">Current Streak</div><div className="text-2xl font-bold">{streak}</div></div>
+              <div className="bg-slate-50 rounded-xl p-3"><div className="font-semibold">Best Streak</div><div className="text-2xl font-bold">{bestStreak}</div></div>
+              <div className="bg-slate-50 rounded-xl p-3"><div className="font-semibold">Remaining</div><div className="text-2xl font-bold">{Math.max(questions.length - (idx + 1), 0)}</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function ResultPage() {
+    return (
+      <div className="min-h-screen w-full bg-gradient-to-b from-sky-50 to-sky-100 text-slate-900 flex flex-col items-center pb-12">
+        <div className="w-full max-w-3xl px-4 pt-10 text-center">
+          <h2 className="text-4xl font-black">🎉 Quiz Finished!</h2>
+          <div className="mt-4 text-xl">Score (first‑try correct): <b>{correctCount} / {questions.length}</b></div>
+          <div className="mt-1 text-xl">Time: <b>{formatMs(finishedMs)}</b></div>
+          <div className="mt-6 flex gap-3 justify-center">
+            <button onClick={() => setPage("control")} className="h-14 px-6 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-lg font-semibold shadow active:scale-95 transition">Back to Controls</button>
+            <button onClick={startSession} className="h-14 px-6 rounded-2xl bg-indigo-500 hover:bg-indigo-600 text-white text-lg font-bold shadow active:scale-95 transition">Play Again</button>
+          </div>
+          <div className="mt-8 text-left bg-white rounded-2xl p-5 shadow">
+            <h3 className="text-lg font-bold mb-2">Quick Review</h3>
+            <ol className="list-decimal pl-5 space-y-1">
+              {questions.map((q, i) => (
+                <li key={q.key} className="flex items-center justify-between">
+                  <span>{q.a} {q.op} {q.b} = {expectedAnswer(q)}</span>
+                  <span className={`ml-3 text-sm font-semibold ${q.wrongOnce ? 'text-rose-600' : 'text-emerald-600'}`}>{q.wrongOnce ? 'Wrong (at least once)' : 'Correct on first try'}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /******************** Render ********************/ 
+  if (page === "practice") return <PracticePage />;
+  if (page === "result") return <ResultPage />;
+  return <ControlPage />;
+}
