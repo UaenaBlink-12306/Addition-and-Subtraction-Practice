@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Kid-Mode Math Trainer</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  :root {
+    --bg1:#f0f7ff; --bg2:#eaf3ff; --ink:#0f172a;
+    --card:#ffffff; --soft:#f8fafc; --accent:#38bdf8; --green:#22c55e; --red:#ef4444; --indigo:#6366f1;
+  }
+  html,body {height:100%; margin:0; font-family: ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; color:var(--ink); background:linear-gradient(#f0f7ff,#eaf3ff);} 
+  .container {max-width:980px; margin:0 auto; padding:16px;}
+  .title {font-size:clamp(28px,5vw,40px); font-weight:900; margin:8px 0 6px;}
+  .row {display:grid; gap:12px;}
+  @media(min-width:900px){ .row-3 {grid-template-columns: 1fr 1fr 1fr;} }
+  .card {background:var(--card); border-radius:20px; padding:16px; box-shadow:0 6px 20px rgba(15,23,42,.08);}
+  .btn {display:inline-flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:18px; padding:0 18px; height:56px; font-weight:800; font-size:20px; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,.08); transform:translateZ(0);} 
+  .btn:active {transform:scale(.98);} 
+  .btn-primary {background:#0ea5e9; color:white;}
+  .btn-soft {background:#e2e8f0; color:#0f172a;}
+  .btn-ok {background:var(--green); color:white;}
+  .btn-bad {background:#fecaca; color:#7f1d1d;}
+  .toggle.on {background:#bbf7d0;}
+  .toggle.off {background:#e2e8f0;}
+  .pill {display:inline-block; padding:6px 10px; border-radius:12px; background:#eff6ff; font-size:12px;}
+  .bigQ {font-size:clamp(40px,9vw,72px); font-weight:900; letter-spacing:.5px;}
+  .answerBox {display:inline-block; min-width:120px; padding:8px 14px; border-radius:16px; background:#f1f5f9; margin-left:10px;}
+  .ok {background:#dcfce7 !important; color:#14532d;}
+  .bad {background:#fee2e2 !important; color:#7f1d1d;}
+  .grid3 {display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .key {height:80px; border-radius:18px; background:#fff; font-size:34px; font-weight:900; border:0; box-shadow:0 6px 14px rgba(0,0,0,.08);}
+  .key:active {transform:scale(.98);} 
+  .helper {font-size:14px; color:#475569;}
+  .hidden {display:none !important;}
+  .review li{display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px dashed #e5e7eb;}
+  .review li:last-child{border-bottom:0;}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="title">🎯 Kid-Mode Math Trainer</div>
+    <div id="stats" class="row" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+      <div class="card"><b>Best Score</b><div id="stat-best">0</div></div>
+      <div class="card"><b>Best Streak</b><div id="stat-streak">0</div></div>
+      <div class="card"><b>Fastest Perfect</b><div id="stat-fast">—</div></div>
+      <div class="card"><b>Lifetime Accuracy</b><div id="stat-acc">0%</div></div>
+    </div>
+  </header>
+
+  <!-- CONTROL PAGE -->
+  <section id="page-control" class="row">
+    <div class="row row-3">
+      <div class="card">
+        <h3>➕➖ Choose Operation</h3>
+        <div class="row" style="grid-template-columns:1fr 1fr">
+          <button id="btn-plus" class="btn toggle off">+ Add</button>
+          <button id="btn-minus" class="btn toggle on">− Subtract</button>
+        </div>
+        <p class="helper">Tip: Turn both on for a mixed quiz.</p>
+      </div>
+
+      <div class="card">
+        <h3>🎚️ Number Range</h3>
+        <div class="row" style="grid-template-columns:auto 1fr; align-items:center;">
+          <div style="font-size:28px; font-weight:800; text-align:center;">1–<span id="rangeLabel">10</span></div>
+          <input id="range" type="range" min="10" max="100" step="1" value="10" style="width:100%;">
+        </div>
+        <p class="helper">Defaults to 10 (kid-friendly).</p>
+      </div>
+
+      <div class="card">
+        <h3>🧮 Number of Questions</h3>
+        <div class="row" style="grid-template-columns:repeat(4,1fr);">
+          <button class="btn btn-soft" data-qcount="10">10</button>
+          <button class="btn btn-soft" data-qcount="15">15</button>
+          <button class="btn btn-soft" data-qcount="20">20</button>
+          <button class="btn btn-soft" data-qcount="25">25</button>
+        </div>
+        <p class="helper">Default is 15; you can choose −5, +5, or +10.</p>
+      </div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr auto; align-items:center;">
+      <div class="pill">Settings auto-saved</div>
+      <button id="start" class="btn btn-primary">Start Quiz</button>
+    </div>
+    <div>
+      <button id="resetRecords" class="btn btn-soft">Reset Records</button>
+    </div>
+  </section>
+
+  <!-- PRACTICE PAGE -->
+  <section id="page-practice" class="row hidden">
+    <div class="row" style="grid-template-columns:1fr auto; align-items:center;">
+      <button id="backToControls" class="btn btn-soft">← Controls</button>
+      <div><span id="qpos" class="pill"></span> <span id="firstTry" class="pill"></span></div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="bigQ">
+        <span id="qa">—</span>
+        <span id="qop"></span>
+        <span id="qb">—</span>
+        <span>=</span>
+        <span id="answer" class="answerBox">…</span>
+      </div>
+      <div id="feedback" class="helper" style="height:22px; margin-top:6px;"></div>
+
+      <div class="grid3" style="margin-top:14px;">
+        <button class="key" data-key="1">1</button><button class="key" data-key="2">2</button><button class="key" data-key="3">3</button>
+        <button class="key" data-key="4">4</button><button class="key" data-key="5">5</button><button class="key" data-key="6">6</button>
+        <button class="key" data-key="7">7</button><button class="key" data-key="8">8</button><button class="key" data-key="9">9</button>
+        <button class="key btn-bad" data-act="clear">Clear</button><button class="key" data-key="0">0</button><button class="key btn-bad" data-act="del">Del</button>
+      </div>
+
+      <button id="submit" class="btn btn-ok" style="width:100%; margin-top:14px;">Submit</button>
+
+      <div class="row" style="grid-template-columns:repeat(3,1fr); margin-top:12px;">
+        <div class="card" style="background:var(--soft);"><div class="helper">Current Streak</div><div id="streak" style="font-size:28px; font-weight:800;">0</div></div>
+        <div class="card" style="background:var(--soft);"><div class="helper">Best Streak (this session)</div><div id="bstreak" style="font-size:28px; font-weight:800;">0</div></div>
+        <div class="card" style="background:var(--soft);"><div class="helper">Remaining</div><div id="remain" style="font-size:28px; font-weight:800;">0</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULT PAGE -->
+  <section id="page-result" class="row hidden">
+    <div class="card" style="text-align:center;">
+      <h2 style="font-size:36px; font-weight:900;">🎉 Quiz Finished!</h2>
+      <div style="font-size:22px; margin:6px 0;">Score (first-try correct): <b id="finalScore"></b></div>
+      <div style="font-size:22px; margin:6px 0;">Time: <b id="finalTime"></b></div>
+      <div class="row" style="grid-template-columns:auto auto; justify-content:center; margin-top:10px;">
+        <button id="again" class="btn btn-primary">Play Again</button>
+        <button id="toControls" class="btn btn-soft">Back to Controls</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h3>Quick Review</h3>
+      <ol id="review" class="review"></ol>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ---------- storage helpers ---------- */
+const S_SET = 'kidmath_settings_v3';
+const S_REC = 'kidmath_records_v3';
+const settings = load(S_SET, {max:10, plus:false, minus:true, totalQs:15});
+const records  = load(S_REC, {bestScore:0,bestStreak:0,fastestPerfectMs:null,totalSessions:0,totalCorrect:0,totalQuestions:0});
+function load(k,f){try{const r=localStorage.getItem(k);return r?JSON.parse(r):f}catch(e){return f}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function fmt(ms){if(ms==null)return '—'; const s=Math.floor(ms/1000),m=Math.floor(s/60),r=s%60; return `${m}:${String(r).padStart(2,'0')}`}
+
+/* ---------- state for a session ---------- */
+let qList=[], idx=0, ans='', firstTryCorrect=0, streak=0, bestStreak=0, startedAt=null, finished=false;
+
+/* ---------- elements ---------- */
+const el = (id)=>document.getElementById(id);
+const pages={control:el('page-control'),practice:el('page-practice'),result:el('page-result')};
+const stats={best:el('stat-best'),streak:el('stat-streak'),fast:el('stat-fast'),acc:el('stat-acc')};
+const range=el('range'), rangeLabel=el('rangeLabel');
+const btnPlus=el('btn-plus'), btnMinus=el('btn-minus');
+const qpos=el('qpos'), firstTry=el('firstTry'), qa=el('qa'), qb=el('qb'), qop=el('qop'), answer=el('answer');
+const fb=el('feedback'), remain=el('remain'), bstreak=el('bstreak'), streakEl=el('streak');
+const review=el('review'), finalScore=el('finalScore'), finalTime=el('finalTime');
+
+/* ---------- init controls ---------- */
+function paintStats(){
+  stats.best.textContent = records.bestScore;
+  stats.streak.textContent = records.bestStreak;
+  stats.fast.textContent = fmt(records.fastestPerfectMs);
+  const acc = records.totalQuestions ? Math.round(records.totalCorrect/records.totalQuestions*100) : 0;
+  stats.acc.textContent = acc+'%';
+}
+function setToggle(btn, on){btn.classList.remove('on','off'); btn.classList.add(on?'on':'off')}
+function saveSettings(){save(S_SET, settings)}
+
+range.value = settings.max; rangeLabel.textContent = settings.max;
+setToggle(btnPlus, settings.plus); setToggle(btnMinus, settings.minus);
+document.querySelectorAll('[data-qcount]').forEach(b=>{
+  if(+b.dataset.qcount===settings.totalQs) b.style.background='#c7d2fe';
+  b.onclick=()=>{settings.totalQs=+b.dataset.qcount; saveSettings(); document.querySelectorAll('[data-qcount]').forEach(x=>x.style.background='#e2e8f0'); b.style.background='#c7d2fe';};
+});
+range.oninput = e=>{settings.max=+e.target.value; rangeLabel.textContent=settings.max; saveSettings();}
+btnPlus.onclick = ()=>{settings.plus=!settings.plus; setToggle(btnPlus, settings.plus); saveSettings()};
+btnMinus.onclick = ()=>{settings.minus=!settings.minus; setToggle(btnMinus, settings.minus); saveSettings()};
+
+el('resetRecords').onclick=()=>{
+  Object.assign(records,{bestScore:0,bestStreak:0,fastestPerfectMs:null,totalSessions:0,totalCorrect:0,totalQuestions:0});
+  save(S_REC, records); paintStats();
+};
+
+/* ---------- helpers ---------- */
+function show(page){ Object.values(pages).forEach(p=>p.classList.add('hidden')); pages[page].classList.remove('hidden'); }
+function ops(){ const a=[]; if(settings.plus)a.push('+'); if(settings.minus)a.push('-'); if(!a.length)a.push('-'); return a }
+function genQ(){ const op = ops()[Math.floor(Math.random()*ops().length)];
+  let a=1+Math.floor(Math.random()*settings.max), b=1+Math.floor(Math.random()*settings.max);
+  if(op==='-' && a<b) [a,b]=[b,a];
+  return {a,b,op, wrongOnce:false, solved:false};
+}
+function start(){
+  qList = Array.from({length:settings.totalQs}, genQ);
+  idx=0; ans=''; firstTryCorrect=0; streak=0; bestStreak=0; startedAt=Date.now(); finished=false;
+  paintQ(); show('practice');
+}
+function end(){
+  finished=true;
+  const time=Date.now()-startedAt;
+  // Update records (first-try stats)
+  if(firstTryCorrect>records.bestScore) records.bestScore=firstTryCorrect;
+  if(bestStreak>records.bestStreak) records.bestStreak=bestStreak;
+  if(firstTryCorrect===qList.length && (records.fastestPerfectMs==null || time<records.fastestPerfectMs)) records.fastestPerfectMs=time;
+  records.totalSessions+=1; records.totalCorrect+=firstTryCorrect; records.totalQuestions+=qList.length;
+  save(S_REC, records); paintStats();
+
+  // result view
+  review.innerHTML = '';
+  qList.forEach(q=>{
+    const li=document.createElement('li');
+    li.innerHTML = `<span>${q.a} ${q.op} ${q.b} = ${q.op==='+'?q.a+q.b:q.a-q.b}</span>`+
+                   `<span class="${q.wrongOnce?'bad':'ok'} pill">${q.wrongOnce?'Wrong (at least once)':'Correct on first try'}</span>`;
+    review.appendChild(li);
+  });
+  finalScore.textContent = `${firstTryCorrect} / ${qList.length}`;
+  finalTime.textContent = fmt(time);
+  show('result');
+}
+function paintQ(){
+  const q=qList[idx];
+  qpos.textContent = `Question ${idx+1} / ${qList.length}`;
+  firstTry.textContent = `First-try correct: ${firstTryCorrect}`;
+  qa.textContent=q.a; qb.textContent=q.b; qop.textContent=q.op;
+  answer.textContent = ans===''?'…':ans;
+  answer.className='answerBox';
+  fb.textContent=''; remain.textContent = (qList.length-(idx+1)); streakEl.textContent=streak; bstreak.textContent=bestStreak;
+}
+function tapDigit(d){ if(finished) return; if(ans.length>=3) return; ans = (ans==='0'? String(d): ans+String(d)); answer.textContent=ans; }
+function tapDel(){ if(finished) return; ans=ans.slice(0,-1); answer.textContent=ans===''?'…':ans; }
+function tapClear(){ if(finished) return; ans=''; answer.textContent='…'; }
+
+/* ---------- keypad ---------- */
+document.querySelectorAll('.key').forEach(k=>{
+  const d=k.dataset.key, act=k.dataset.act;
+  if(d) k.onclick=()=>tapDigit(d);
+  else if(act==='del') k.onclick=tapDel;
+  else if(act==='clear') k.onclick=tapClear;
+});
+
+/* ---------- submit logic ---------- */
+let submitLocked=false;
+el('submit').onclick=()=>{
+  if(submitLocked || finished) return;
+  const q=qList[idx]; if(!q || ans==='') return;
+  const exp = q.op==='+'? q.a+q.b : q.a-q.b;
+  const correct = Number(ans)===exp;
+
+  if(correct){
+    if(!q.wrongOnce){ // first try success counts
+      firstTryCorrect++;
+      streak++; if(streak>bestStreak) bestStreak=streak;
+    }
+    q.solved=true;
+    submitLocked=true;
+    answer.classList.add('ok'); fb.textContent='✓ Great job!'; fb.style.color='#16a34a';
+    setTimeout(()=>{ // advance
+      submitLocked=false; idx++;
+      if(idx>=qList.length) end();
+      else { ans=''; streakEl.textContent=streak; paintQ(); }
+    }, 350);
+  }else{
+    // mark wrong once, clear input, keep same question; do not count multiple wrongs
+    if(!q.wrongOnce) q.wrongOnce=true;
+    streak=0; answer.classList.add('bad'); fb.textContent='✗ Oops! Try again.'; fb.style.color='#b91c1c';
+    ans=''; setTimeout(()=>{answer.className='answerBox'; answer.textContent='…';}, 150);
+  }
+};
+
+/* ---------- navigation buttons ---------- */
+el('start').onclick=start;
+el('again').onclick=start;
+el('toControls').onclick=()=>show('control');
+el('backToControls').onclick=()=>show('control');
+
+/* ---------- init ---------- */
+paintStats(); show('control');
+</script>
+</body>
+</html>
