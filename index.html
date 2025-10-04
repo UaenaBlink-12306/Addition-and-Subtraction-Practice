@@ -11,13 +11,13 @@
     --bg1:#f0f7ff; --bg2:#eaf3ff; --ink:#0f172a;
     --card:#ffffff; --soft:#f8fafc; --accent:#38bdf8; --green:#22c55e; --red:#ef4444; --indigo:#6366f1;
   }
-  html,body {height:100%; margin:0; font-family: ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; color:var(--ink); background:linear-gradient(#f0f7ff,#eaf3ff);}
+  html,body {height:100%; margin:0; font-family: ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans"; color:var(--ink); background:linear-gradient(#f0f7ff,#eaf3ff);}
   .container {max-width:980px; margin:0 auto; padding:16px;}
   .title {font-size:clamp(28px,5vw,40px); font-weight:900; margin:8px 0 6px;}
   .row {display:grid; gap:12px;}
   @media(min-width:900px){ .row-3 {grid-template-columns: 1fr 1fr 1fr;} }
   .card {background:var(--card); border-radius:20px; padding:16px; box-shadow:0 6px 20px rgba(15,23,42,.08);}
-  .btn {display:inline-flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:18px; padding:0 18px; height:56px; font-weight:800; font-size:20px; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,.08); transform:translateZ(0);}
+  .btn {display:inline-flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:18px; padding:0 18px; height:56px; font-weight:800; font-size:20px; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,.08);}
   .btn:active {transform:scale(.98);}
   .btn-primary {background:#0ea5e9; color:white;}
   .btn-soft {background:#e2e8f0; color:#0f172a;}
@@ -26,7 +26,7 @@
   .toggle.on {background:#bbf7d0;}
   .toggle.off {background:#e2e8f0;}
   .pill {display:inline-block; padding:6px 10px; border-radius:12px; background:#eff6ff; font-size:12px;}
-  .bigQ {font-size:clamp(40px,9vw,72px); font-weight:900; letter-spacing:.5px;}
+  .bigQ {font-size:clamp(40px,9vw,72px); font-weight:900;}
   .answerBox {display:inline-block; min-width:120px; padding:8px 14px; border-radius:16px; background:#f1f5f9; margin-left:10px;}
   .ok {background:#dcfce7 !important; color:#14532d;}
   .bad {background:#fee2e2 !important; color:#7f1d1d;}
@@ -64,22 +64,12 @@
       </div>
 
       <div class="card">
-        <h3>🎚️ Number Ranges</h3>
-        <p class="helper">Pick one or two ranges between 1–100.</p>
+        <h3>🎚️ Number Range</h3>
         <div>
-          <label>Range 1: 
-            <input id="range1min" type="number" min="1" max="100" value="5" style="width:60px;">
-            –
-            <input id="range1max" type="number" min="1" max="100" value="10" style="width:60px;">
-          </label>
+          <label>Lower: <input id="rangeMin" type="number" min="1" max="100" value="5" style="width:60px;"></label>
+          <label style="margin-left:12px;">Upper: <input id="rangeMax" type="number" min="1" max="100" value="10" style="width:60px;"></label>
         </div>
-        <div style="margin-top:8px;">
-          <label>Range 2: 
-            <input id="range2min" type="number" min="1" max="100" value="20" style="width:60px;">
-            –
-            <input id="range2max" type="number" min="1" max="100" value="30" style="width:60px;">
-          </label>
-        </div>
+        <p class="helper">Choose a custom lower and upper bound.</p>
       </div>
 
       <div class="card">
@@ -157,10 +147,10 @@
 
 <script>
 /* ---------- storage helpers ---------- */
-const S_SET = 'kidmath_settings_v4';
+const S_SET = 'kidmath_settings_range';
 const S_REC = 'kidmath_records_v3';
 const settings = load(S_SET, {
-  ranges:[{min:5,max:10},{min:20,max:30}],
+  min:5, max:10,
   plus:false, minus:true, totalQs:15
 });
 const records  = load(S_REC, {bestScore:0,bestStreak:0,fastestPerfectMs:null,totalSessions:0,totalCorrect:0,totalQuestions:0});
@@ -168,7 +158,7 @@ function load(k,f){try{const r=localStorage.getItem(k);return r?JSON.parse(r):f}
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 function fmt(ms){if(ms==null)return '—'; const s=Math.floor(ms/1000),m=Math.floor(s/60),r=s%60; return `${m}:${String(r).padStart(2,'0')}`}
 
-/* ---------- state for a session ---------- */
+/* ---------- state ---------- */
 let qList=[], idx=0, ans='', firstTryCorrect=0, streak=0, bestStreak=0, startedAt=null, finished=false;
 
 /* ---------- elements ---------- */
@@ -191,14 +181,13 @@ function paintStats(){
 function setToggle(btn, on){btn.classList.remove('on','off'); btn.classList.add(on?'on':'off')}
 function saveSettings(){save(S_SET, settings)}
 
-function updateRanges(){
-  settings.ranges[0].min = +el('range1min').value;
-  settings.ranges[0].max = +el('range1max').value;
-  settings.ranges[1].min = +el('range2min').value;
-  settings.ranges[1].max = +el('range2max').value;
+function updateRange(){
+  settings.min = +el('rangeMin').value;
+  settings.max = +el('rangeMax').value;
+  if(settings.min>settings.max){ [settings.min,settings.max] = [settings.max,settings.min]; }
   saveSettings();
 }
-['range1min','range1max','range2min','range2max'].forEach(id=>el(id).oninput=updateRanges);
+['rangeMin','rangeMax'].forEach(id=>el(id).oninput=updateRange);
 
 setToggle(btnPlus, settings.plus); setToggle(btnMinus, settings.minus);
 document.querySelectorAll('[data-qcount]').forEach(b=>{
@@ -216,14 +205,12 @@ el('resetRecords').onclick=()=>{
 /* ---------- helpers ---------- */
 function show(page){ Object.values(pages).forEach(p=>p.classList.add('hidden')); pages[page].classList.remove('hidden'); }
 function ops(){ const a=[]; if(settings.plus)a.push('+'); if(settings.minus)a.push('-'); if(!a.length)a.push('-'); return a }
-function pickFromRanges(){
-  const r = settings.ranges[Math.floor(Math.random()*settings.ranges.length)];
-  const lo=Math.min(r.min,r.max), hi=Math.max(r.min,r.max);
-  return lo + Math.floor(Math.random()*(hi-lo+1));
+function pickVal(){
+  return settings.min + Math.floor(Math.random()*(settings.max-settings.min+1));
 }
 function genQ(){ 
   const op = ops()[Math.floor(Math.random()*ops().length)];
-  let a=pickFromRanges(), b=pickFromRanges();
+  let a=pickVal(), b=pickVal();
   if(op==='-' && a<b) [a,b]=[b,a]; // avoid negatives
   return {a,b,op, wrongOnce:false, solved:false};
 }
@@ -281,26 +268,19 @@ el('submit').onclick=()=>{
   const correct = Number(ans)===exp;
 
   if(correct){
-    if(!q.wrongOnce){ 
-      firstTryCorrect++;
-      streak++; if(streak>bestStreak) bestStreak=streak;
-    }
+    if(!q.wrongOnce){ firstTryCorrect++; streak++; if(streak>bestStreak) bestStreak=streak; }
     q.solved=true;
     submitLocked=true;
     answer.classList.add('ok'); fb.textContent='✓ Great job!'; fb.style.color='#16a34a';
-    setTimeout(()=>{
-      submitLocked=false; idx++;
-      if(idx>=qList.length) end();
-      else { ans=''; streakEl.textContent=streak; paintQ(); }
-    }, 350);
+    setTimeout(()=>{submitLocked=false; idx++; if(idx>=qList.length) end(); else { ans=''; paintQ(); }},350);
   }else{
     if(!q.wrongOnce) q.wrongOnce=true;
     streak=0; answer.classList.add('bad'); fb.textContent='✗ Oops! Try again.'; fb.style.color='#b91c1c';
-    ans=''; setTimeout(()=>{answer.className='answerBox'; answer.textContent='…';}, 150);
+    ans=''; setTimeout(()=>{answer.className='answerBox'; answer.textContent='…';},150);
   }
 };
 
-/* ---------- navigation buttons ---------- */
+/* ---------- nav ---------- */
 el('start').onclick=start;
 el('again').onclick=start;
 el('toControls').onclick=()=>show('control');
